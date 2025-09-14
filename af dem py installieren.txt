@@ -1,0 +1,11 @@
+sudo install -m 755 scripts/kiosk.sh /usr/local/bin/kiosk.sh
+sudo install -m 644 deploy/systemd/slidepi-kiosk.service /etc/systemd/system/slidepi-kiosk.service
+sudo systemctl daemon-reload
+sudo systemctl enable slidepi-kiosk.service
+sudo systemctl start slidepi-kiosk.service
+
+
+Logs prüfen
+journalctl -u slidepi-kiosk.service -f
+tail -f /var/log/slidepi-kiosk.log
+

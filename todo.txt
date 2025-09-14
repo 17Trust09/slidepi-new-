@@ -1,0 +1,10 @@
+Netzwerk / AP
+-AP IP (wlan0)
+10.10.0.1
+DHCP Range Start
+10.10.0.50
+DHCP Range Ende
+10.10.0.150
+
+unter welcher ip erreiche die die webseite???
+

@@ -1,0 +1,18 @@
+# /etc/sudoers.d/slidepi
+# Erlaubt dem App-User (z.B. www-data oder slidepi) passwortlos:
+# - hostapd starten/stoppen
+# - dnsmasq neu starten
+# - ip-Link/Addr-Befehle
+# !!! APPUSER unten auf deinen realen Benutzer ändern !!!
+
+Defaults:APPUSER !requiretty
+
+APPUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start hostapd
+APPUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop hostapd
+APPUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dnsmasq
+APPUSER ALL=(ALL) NOPASSWD: /usr/sbin/ip *, /sbin/ip *
+
+# Falls systemctl nicht unter /usr/bin liegt (selten), zusätzlich gestatten:
+APPUSER ALL=(ALL) NOPASSWD: /bin/systemctl start hostapd
+APPUSER ALL=(ALL) NOPASSWD: /bin/systemctl stop hostapd
+APPUSER ALL=(ALL) NOPASSWD: /bin/systemctl restart dnsmasq

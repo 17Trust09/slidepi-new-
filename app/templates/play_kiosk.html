@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Player (Kiosk){% endblock %}
+{% block content %}
+<div class="player-wrap" data-mode="kiosk">
+  <!-- Bühne: nur Stage, keine Overlays/Buttons -->
+  <div id="stage" class="player-stage" aria-live="polite"
+       data-default-duration="{{ (SETTINGS.default_duration or '10')|e }}"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/player.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const el = document.documentElement;
+  try {
+    if (el.requestFullscreen) el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    else if (el.msRequestFullscreen) el.msRequestFullscreen();
+  } catch(e){ console.warn("Fullscreen konnte nicht aktiviert werden:", e); }
+});
+</script>
+{% endblock %}

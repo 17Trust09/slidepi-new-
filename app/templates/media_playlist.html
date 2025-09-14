@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Playlist verwalten</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{ color-scheme:dark; }
+    body{ font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif; margin:0; background:#0b0f14; color:#eaeff7; }
+    header{ padding:16px 24px; background:#0f1620; border-bottom:1px solid #1b2430; display:flex; align-items:center; gap:16px; }
+    h1{ font-size:18px; margin:0; font-weight:600; }
+    main{ padding:20px; max-width:1100px; margin:0 auto; }
+    .toolbar{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+    .btn{ border:1px solid #2a3b55; background:#132033; color:#eaeff7; padding:10px 14px; border-radius:10px; cursor:pointer; }
+    .btn:hover{ background:#17263c; }
+    .btn[disabled]{ opacity:.6; cursor:not-allowed; }
+    .list{ list-style:none; padding:0; margin:0; display:grid; gap:10px; }
+    .item{ display:grid; grid-template-columns: 92px 1fr auto; align-items:center; gap:12px; background:#0f1620; border:1px solid #1b2430; border-radius:12px; padding:10px; }
+    .thumb{ width:92px; height:52px; object-fit:cover; border-radius:8px; border:1px solid #253247; background:#0b1119; }
+    .meta{ display:flex; flex-direction:column; gap:6px; min-width:0; }
+    .name{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .type{ opacity:.8; font-size:12px; }
+    .drag{ cursor:grab; user-select:none; }
+    .actions{ display:flex; align-items:center; gap:8px; }
+    input[type="number"]{ width:90px; padding:8px 10px; border-radius:8px; border:1px solid #223043; background:#0b1119; color:#eaeff7; }
+    .badge{ font-size:12px; padding:2px 6px; border-radius:6px; background:#1a2a40; border:1px solid #2a3b55; }
+    .empty{ opacity:.8; padding:16px; text-align:center; border:1px dashed #2a3b55; border-radius:12px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Aktive Playlist verwalten</h1>
+  <span class="badge" id="infoCount">0 Elemente</span>
+</header>
+
+<main>
+  <div class="toolbar">
+    <button class="btn" id="btnRefresh">Aktualisieren</button>
+    <button class="btn" id="btnSaveOrder">Reihenfolge speichern</button>
+  </div>
+
+  <ul id="list" class="list" aria-label="Playlist Items"></ul>
+
+  <div id="empty" class="empty" hidden>Keine Elemente in der aktiven Playlist.</div>
+</main>
+
+<script>
+const listEl   = document.getElementById('list');
+const emptyEl  = document.getElementById('empty');
+const infoCount= document.getElementById('infoCount');
+const btnRefresh = document.getElementById('btnRefresh');
+const btnSaveOrder = document.getElementById('btnSaveOrder');
+
+let dragSrc = null;
+
+function toggleEmpty(){
+  const hasItems = listEl.children.length > 0;
+  emptyEl.hidden = hasItems;
+  infoCount.textContent = (hasItems ? listEl.children.length : 0) + ' Elemente';
+}
+
+function makeItem(it){
+  // Schutz für API-Feldnamen: thumb/thumb_url, type/kind, duration/duration_s
+  const thumb = it.thumb || it.thumb_url || '';
+  const typ   = (it.type || it.kind || '').toString().toUpperCase();
+  const mime  = it.mime || '';
+  const durVal= (it.duration ?? it.duration_s ?? '').toString();
+  const itemId= it.playlist_item_id ?? it.id;
+
+  const li = document.createElement('li');
+  li.className = 'item';
+  li.draggable = true;
+  li.dataset.itemId = itemId;
+
+  li.addEventListener('dragstart', e => {
+    dragSrc = li;
+    li.classList.add('drag');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  li.addEventListener('dragend', () => li.classList.remove('drag'));
+  li.addEventListener('dragover', e => { e.preventDefault(); });
+  li.addEventListener('drop', e => {
+    e.preventDefault();
+    const tgt = e.currentTarget;
+    if(dragSrc && dragSrc !== tgt){
+      const all = [...listEl.children];
+      const srcIdx = all.indexOf(dragSrc);
+      const tgtIdx = all.indexOf(tgt);
+      if(srcIdx < tgtIdx) listEl.insertBefore(dragSrc, tgt.nextSibling);
+      else listEl.insertBefore(dragSrc, tgt);
+      toggleEmpty(); // Anzahl bleibt korrekt
+    }
+  });
+
+  const img = document.createElement('img');
+  img.className = 'thumb';
+  img.src = thumb;
+  img.alt = 'Thumb';
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const name = document.createElement('div');
+  name.className = 'name';
+  name.textContent = it.filename || ('#' + (it.media_id ?? ''));
+  const type = document.createElement('div');
+  type.className = 'type';
+  type.textContent = `${typ}${mime ? (' • ' + mime) : ''}`;
+  meta.appendChild(name);
+  meta.appendChild(type);
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  const dur = document.createElement('input');
+  dur.type = 'number';
+  dur.min = '1';
+  dur.step = '1';
+  dur.value = durVal || '';
+  dur.title = 'Anzeigedauer (Sek.) — leer lassen um Default zu verwenden';
+  dur.placeholder = 'Sek.';
+  dur.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter') { e.preventDefault(); btnSet.click(); }
+  });
+
+  const btnSet = document.createElement('button');
+  btnSet.className = 'btn';
+  btnSet.textContent = 'Dauer setzen';
+  btnSet.addEventListener('click', async () => {
+    const v = dur.value.trim();
+    const payload = { item_id: itemId, duration: v === '' ? null : parseInt(v, 10) };
+    btnSet.disabled = true;
+    try{
+      const res = await fetch('/api/playlist/set_duration', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      const j = await res.json();
+      if(!j.ok) alert(j.error || 'Fehler beim Setzen der Dauer');
+      else alert('Dauer gespeichert');
+    }catch(err){
+      console.error(err);
+      alert('Netzwerkfehler beim Setzen der Dauer');
+    }finally{
+      btnSet.disabled = false;
+    }
+  });
+
+  const btnRemove = document.createElement('button');
+  btnRemove.className = 'btn';
+  btnRemove.textContent = 'Entfernen';
+  btnRemove.addEventListener('click', async () => {
+    if(!confirm('Dieses Element aus der Playlist entfernen?')) return;
+    btnRemove.disabled = true;
+    try{
+      const res = await fetch('/api/playlist/remove', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ item_id: itemId })
+      });
+      const j = await res.json();
+      if(!j.ok) { alert(j.error || 'Fehler beim Entfernen'); btnRemove.disabled = false; return; }
+      li.remove();
+      toggleEmpty();
+    }catch(err){
+      console.error(err);
+      alert('Netzwerkfehler beim Entfernen');
+      btnRemove.disabled = false;
+    }
+  });
+
+  actions.appendChild(dur);
+  actions.appendChild(btnSet);
+  actions.appendChild(btnRemove);
+
+  li.appendChild(img);
+  li.appendChild(meta);
+  li.appendChild(actions);
+  return li;
+}
+
+function render(items){
+  listEl.innerHTML = '';
+  if(!Array.isArray(items) || items.length === 0){
+    toggleEmpty();
+    return;
+  }
+  for(const it of items){
+    listEl.appendChild(makeItem(it));
+  }
+  toggleEmpty();
+}
+
+async function loadFeed(){
+  btnRefresh.disabled = true;
+  try{
+    const res = await fetch('/api/feed', {cache:'no-store'});
+    const j = await res.json();
+    if(!j.ok) { alert(j.error || 'Feed konnte nicht geladen werden'); return; }
+    render(j.feed || []);
+  }catch(err){
+    console.error(err);
+    alert('Netzwerkfehler beim Laden des Feeds');
+  }finally{
+    btnRefresh.disabled = false;
+  }
+}
+
+async function saveOrder(){
+  const ids = [...listEl.children].map(li => parseInt(li.dataset.itemId, 10));
+  if(ids.length === 0){
+    alert('Keine Elemente zum Speichern.');
+    return;
+  }
+  btnSaveOrder.disabled = true;
+  try{
+    const res = await fetch('/api/playlist/sort', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({order: ids})
+    });
+    const j = await res.json();
+    if(!j.ok) alert(j.error || 'Fehler beim Speichern der Reihenfolge');
+    else alert('Reihenfolge gespeichert');
+  }catch(err){
+    console.error(err);
+    alert('Netzwerkfehler beim Speichern der Reihenfolge');
+  }finally{
+    btnSaveOrder.disabled = false;
+  }
+}
+
+document.getElementById('btnRefresh').addEventListener('click', loadFeed);
+document.getElementById('btnSaveOrder').addEventListener('click', saveOrder);
+
+// initial laden
+loadFeed();
+</script>
+</body>
+</html>

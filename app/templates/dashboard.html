@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="grid">
+  <!-- Präsentation -->
+  <section class="card">
+    <h2>Präsentation</h2>
+    <p>Starte die Anzeige auf dem Player.</p>
+    <div class="row">
+      <a class="btn" href="/present" title="Player mit Bedien-Overlay (Uhr/Buttons)">Player öffnen</a>
+      <a class="btn" href="/present/kiosk" title="Reiner Vollbild-Player ohne Buttons/Overlay">Kiosk-Player öffnen</a>
+    </div>
+  </section>
+
+  <!-- Medien -->
+  <section class="card">
+    <h2>Medien</h2>
+    <p>Bilder &amp; Videos hochladen und verwalten.</p>
+    <div class="row">
+      {% if can('upload') %}
+      <a class="btn" href="/media">Medien-Grid öffnen</a>
+      {% else %}
+      <a class="btn" href="/media">Medien ansehen</a>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Playlist -->
+  {% if can('upload') %}
+  <section class="card">
+    <h2>Playlist</h2>
+    <p>Mehrere Playlists erstellen, aktiv setzen &amp; Inhalte pflegen.</p>
+
+    <p id="active-pl" class="muted" hidden>
+      Aktiv: <strong id="active-pl-name"></strong>
+      <a id="active-pl-edit" class="btn" href="#" style="margin-left:8px;" hidden>Aktive bearbeiten</a>
+    </p>
+
+    <a class="btn" href="/admin/playlists">Playlists verwalten</a>
+  </section>
+  {% endif %}
+
+  <!-- Benutzer -->
+  {% if can('user_admin') %}
+  <section class="card">
+    <h2>Benutzer</h2>
+    <p>Admins können Benutzer verwalten.</p>
+    <a class="btn" href="/auth/users">Benutzerverwaltung</a>
+  </section>
+  {% endif %}
+
+  <!-- System & Admin -->
+  {% if can('system_view') %}
+  <section class="card" id="sys-card">
+    <h2>System</h2>
+    <div id="sysinfo" class="mono small">Lade…</div>
+
+    {% if can('user_admin') %}
+    <hr>
+    <h3>Admin-Optionen</h3>
+    <form method="post" action="/admin/system/actions" class="sys-actions">
+      <div class="btnrow">
+        <button class="btn" name="action" value="create_defaults" type="submit" title="Legt Basis-Settings an, sofern nicht vorhanden.">Default-Einstellungen anlegen</button>
+        <button class="btn" name="action" value="ensure_default_playlist" type="submit" title="Erstellt eine Default-Playlist, falls noch keine existiert.">Default-Playlist sicherstellen</button>
+        <button class="btn" name="action" value="git_update" type="submit" title="Nur wenn .git existiert.">Projekt-Update</button>
+      </div>
+
+      <div class="fieldrow">
+        <label>Login-Timeout (Minuten)
+          <input id="login-timeout-input" type="number" min="1" max="10080" step="1" name="login_timeout_minutes" placeholder="z. B. 30">
+        </label>
+        <button class="btn" name="action" value="set_login_timeout" type="submit">Speichern</button>
+      </div>
+
+      <!-- Anzeige des aktuellen Werts + Countdown bei Inaktivität -->
+      <div class="fieldrow">
+        <span class="muted">Aktuell: <strong id="lt-current">–</strong> Minuten</span>
+        <span id="lt-count" class="muted" hidden>• Automatische Abmeldung in <strong id="lt-remaining">–:–</strong></span>
+      </div>
+
+      <p class="muted">AP-Konfiguration findest du jetzt unter <strong>„Netzwerk / AP“</strong>.</p>
+    </form>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function(){
+  // ---------- Systeminfo ----------
+  const el = document.getElementById('sysinfo');
+  if(el){
+    async function fetchInfo(){
+      try {
+        let res = await fetch('/api/system/info', {cache: 'no-store'});
+        if(!res.ok) {
+          res = await fetch('/api/systeminfo', {cache:'no-store'});
+        }
+        const j = await res.json();
+        if(!j.ok || !j.info) throw new Error(j.error || 'no info');
+
+        const i = j.info;
+        el.innerHTML =
+          `OS: ${i.os}<br>` +
+          `Python: ${i.python}<br>` +
+          `CPU: ${i.cpu_count} cores, Load: ${i.cpu_load_percent ?? '–'}%<br>` +
+          `RAM: ${i.ram_used_mb ?? '–'} / ${i.ram_total_mb ?? '–'} MB (${i.ram_percent ?? '–'}%)<br>` +
+          `Disk: ${i.disk_used_gb ?? '–'} / ${i.disk_total_gb ?? '–'} GB (${i.disk_percent ?? '–'}%)<br>` +
+          `Uptime: ${formatUptime(i.uptime_seconds)}`;
+      } catch (e) {
+        el.textContent = 'Konnte Systeminfo nicht laden.';
+        console.error(e);
+      }
+    }
+    function formatUptime(sec){
+      if(!sec && sec !== 0) return '–';
+      const d = Math.floor(sec / 86400);
+      sec %= 86400;
+      const h = Math.floor(sec / 3600);
+      sec %= 3600;
+      const m = Math.floor(sec / 60);
+      return `${d}d ${h}h ${m}m`;
+    }
+    await fetchInfo();
+  }
+
+  // ---------- Aktive Playlist ----------
+  const row = document.getElementById('active-pl');
+  const nameEl = document.getElementById('active-pl-name');
+  const editA = document.getElementById('active-pl-edit');
+
+  async function showActive(){
+    if(!row || !nameEl) return;
+    try{
+      let res = await fetch('/api/playlist/active', {cache:'no-store'});
+      if(res.ok){
+        const j = await res.json();
+        const pl = j.playlist || j.active || j;
+        const items = j.items || j.feed || [];
+        const hasAny = Array.isArray(items) ? items.length>0 : true;
+        const id = pl?.id ?? j.playlist_id ?? null;
+        const nm = pl?.name ?? j.name ?? null;
+
+        if(nm || hasAny){
+          row.hidden = false;
+          nameEl.textContent = nm || 'Aktive Playlist';
+          if (id && editA){
+            editA.href = "/admin/playlists?id=" + encodeURIComponent(id) + "&name=" + encodeURIComponent(nm || '');
+            editA.hidden = false;
+          }
+          return;
+        }
+      }
+    }catch(e){ console.warn('active playlist endpoint failed', e); }
+
+    try{
+      const res2 = await fetch('/api/feed', {cache:'no-store'});
+      if(res2.ok){
+        const j2 = await res2.json();
+        const items = j2.feed || j2.items || [];
+        if(Array.isArray(items) && items.length){
+          row.hidden = false;
+          nameEl.textContent = 'Aktive Playlist';
+          return;
+        }
+      }
+    }catch(e){ console.warn('feed fallback failed', e); }
+
+    row.hidden = false;
+    nameEl.textContent = 'Keine aktive Playlist';
+  }
+  await showActive();
+
+  // ---------- Login-Timeout: aktueller Wert + Inaktivitäts-Countdown ----------
+  const input = document.getElementById('login-timeout-input');
+  const spanCurrent = document.getElementById('lt-current');
+  const spanCountWrap = document.getElementById('lt-count');
+  const spanRemaining = document.getElementById('lt-remaining');
+
+  let timeoutMin = 30;                 // Fallback
+  const SHOW_AFTER_IDLE_SEC = 15;      // Countdown erst nach X s Inaktivität zeigen
+  let lastActivity = Date.now();
+
+  async function fetchLoginTimeout(){
+    try{
+      const res = await fetch('/api/settings/login_timeout', {cache:'no-store'});
+      if(res.ok){
+        const j = await res.json();
+        if (j && j.ok && Number.isFinite(j.minutes)){
+          timeoutMin = Math.max(1, Math.min(10080, Number(j.minutes)));
+        }
+      }
+    }catch(e){ console.warn('login timeout fetch failed', e); }
+    // Anzeige + Input-PreFill
+    if (spanCurrent) spanCurrent.textContent = String(timeoutMin);
+    if (input && !input.value) input.value = String(timeoutMin);
+  }
+
+  function onUserActivity(){
+    lastActivity = Date.now();
+    if (spanCountWrap) spanCountWrap.hidden = true;
+  }
+
+  function tickCountdown(){
+    const idleSec = Math.floor((Date.now() - lastActivity) / 1000);
+    const totalSec = Math.max(0, Math.round(timeoutMin * 60 - idleSec));
+    if (idleSec >= SHOW_AFTER_IDLE_SEC){
+      if (spanCountWrap) spanCountWrap.hidden = false;
+      const mm = Math.floor(totalSec / 60).toString().padStart(2, "0");
+      const ss = (totalSec % 60).toString().padStart(2, "0");
+      if (spanRemaining) spanRemaining.textContent = `${mm}:${ss}`;
+    } else {
+      if (spanCountWrap) spanCountWrap.hidden = true;
+    }
+  }
+
+  await fetchLoginTimeout();
+
+  // Inaktivität erkennen
+  ["mousemove","keydown","click","touchstart","scroll"].forEach(ev=>{
+    window.addEventListener(ev, onUserActivity, {passive:true});
+  });
+  setInterval(tickCountdown, 1000);
+})();
+</script>
+<style>
+.grid{ display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); }
+.card{ background:#0f1620; border:1px solid #1b2430; border-radius:14px; padding:16px; }
+.row{ display:flex; gap:8px; flex-wrap:wrap; }
+.btn{ border:1px solid #2a3b55; background:#132033; color:#eaeff7; padding:8px 12px; border-radius:10px; text-decoration:none; cursor:pointer; }
+.btn:hover{ background:#17263c; }
+.mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+.small{ font-size: 12px; line-height: 1.5; opacity: .95; }
+.muted{ opacity:.85; }
+
+.sys-actions{ display:flex; flex-direction:column; gap:12px; margin-top:10px; }
+.btnrow{ display:flex; flex-wrap:wrap; gap:8px; }
+.fieldrow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.fieldrow label{ display:flex; gap:8px; align-items:center; }
+.fieldrow input{ padding:8px 10px; border-radius:10px; border:1px solid #223043; background:#0b1119; color:#eaeff7; }
+</style>
+{% endblock %}

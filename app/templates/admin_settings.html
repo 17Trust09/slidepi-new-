@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen{% endblock %}
+{% block content %}
+<h1>Einstellungen</h1>
+
+<section class="cards">
+  <article class="card" style="max-width:560px;">
+    <form method="post" enctype="multipart/form-data">
+      <div style="margin-bottom:0.6rem;">
+        <label>App-Name<br>
+          <input type="text" name="app_name" value="{{ s.app_name or 'SlidePi' }}" required>
+        </label>
+      </div>
+
+      <div style="margin-bottom:0.6rem;">
+        <label>Standard-Dauer je Bild (Sekunden)<br>
+          <input type="number" min="1" max="3600" name="default_duration" value="{{ s.default_duration or '10' }}" required>
+        </label>
+        <small>Bilder ohne explizite Dauer laufen mit dieser Zeit.</small>
+      </div>
+
+      <div style="margin-bottom:0.6rem;">
+        <label>Theme<br>
+          <select name="theme">
+            <option value="dark"  {{ 'selected' if s.theme == 'dark' else '' }}>Dunkel</option>
+            <option value="light" {{ 'selected' if s.theme == 'light' else '' }}>Hell</option>
+            <option value="auto"  {{ 'selected' if s.theme == 'auto' else '' }}>Automatisch</option>
+          </select>
+        </label>
+      </div>
+
+      <div style="margin-bottom:0.6rem;">
+        <label>Logo fürs Player-Overlay (PNG empfohlen)<br>
+          <input type="file" name="logo" accept="image/*">
+        </label>
+        <div style="margin-top:0.5rem;">
+          <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" style="height:38px;border:1px solid #1f2a3a;border-radius:6px;background:#0f1621;padding:4px;" onerror="this.style.display='none'">
+        </div>
+        <small>Wenn kein Logo vorhanden ist, blendet der Player den Platz automatisch aus.</small>
+      </div>
+
+      <button type="submit">Speichern</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <h3>Hinweis</h3>
+    <ul>
+      <li>Der App-Name erscheint in der Kopfzeile.</li>
+      <li>Die Standard-Dauer gilt für Bilder ohne gesetzte Dauer in der Playlist.</li>
+      <li>Das Logo wird als <code>static/img/logo.png</code> gespeichert.</li>
+    </ul>
+  </article>
+</section>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Player{% endblock %}
+{% block content %}
+{# DEFAULT-DURATION aus Settings an das Stage-Element geben #}
+<div class="player-wrap" data-mode="normal">
+  <!-- Bühne -->
+  <div id="stage" class="player-stage" aria-live="polite"
+       data-default-duration="{{ (SETTINGS.default_duration or '10')|e }}"></div>
+
+  <!-- Overlay: Uhr + Logo + Controls (diese Seite ist bewusst NICHT kiosk) -->
+  <div class="player-overlay" aria-label="Player-Steuerung" role="region">
+    <div class="overlay-left">
+      <img id="player-logo" alt="Logo"
+           src="{{ url_for('static', filename='img/logo.png') }}"
+           onerror="this.style.display='none'">
+      <span id="clock" aria-live="polite"></span>
+    </div>
+    <div class="overlay-right">
+      <button class="btn btn-ghost" id="btn-prev"  type="button" title="Zurück (←)" aria-label="Zurück">⟨</button>
+      <button class="btn btn-ghost" id="btn-playpause" type="button" title="Play/Pause (Leertaste)" aria-label="Play oder Pause">⏯</button>
+      <button class="btn btn-ghost" id="btn-next" type="button" title="Weiter (→)" aria-label="Weiter">⟩</button>
+      <button class="btn btn-ghost" id="btn-full" type="button" title="Vollbild (F)" aria-label="Vollbild">⤢</button>
+    </div>
+  </div>
+
+  <!-- Hinweis bei Feed-Update -->
+  <div id="update-hint" class="player-update-hint" hidden>Playlist aktualisiert – übernehme …</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/player.js') }}"></script>
+<script>
+/* Sanftes Auto-Hide der Overlay-Controls nach Inaktivität (nur Normal-Player) */
+(function(){
+  const wrap = document.querySelector('.player-wrap');
+  const overlay = document.querySelector('.player-overlay');
+  if (!wrap || !overlay) return;
+
+  let timer = null;
+  const IDLE_MS = 5000;
+
+  function showOverlay(){
+    overlay.style.opacity = '';
+    overlay.style.pointerEvents = '';
+  }
+  function hideOverlay(){
+    overlay.style.opacity = '0';
+    overlay.style.pointerEvents = 'none';
+  }
+  function resetTimer(){
+    showOverlay();
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(hideOverlay, IDLE_MS);
+  }
+
+  // Nur im Nicht-Kiosk-Modus
+  if (wrap.dataset.mode !== 'kiosk'){
+    ['mousemove','keydown','pointerdown','touchstart'].forEach(ev =>
+      document.addEventListener(ev, resetTimer, {passive:true})
+    );
+    resetTimer();
+  }
+})();
+</script>
+{% endblock %}

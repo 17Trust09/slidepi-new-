@@ -1,0 +1,625 @@
+{% extends "base.html" %}
+{% block title %}Medien{% endblock %}
+
+{% block content %}
+<div class="media-layout">
+  <!-- Sidebar: Ordner -->
+  <aside class="media-sidebar">
+    <div class="sb-head">
+      <h2>Ordner</h2>
+    </div>
+
+    <nav id="folder-list" class="sb-folders">
+      <!-- Global -->
+      <button class="sb-item is-active" data-folder-id="">
+        📂 Alle Dateien
+      </button>
+      <div class="sb-divider"></div>
+      <!-- Ordner werden per JS ergänzt -->
+    </nav>
+
+    {% if can('upload') %}
+    <div class="sb-new">
+      <input id="new-folder-name" class="inp" placeholder="Neuer Ordner" aria-label="Neuer Ordnername">
+      <button id="btn-create-folder" class="btn w100" type="button">➕ Anlegen</button>
+      <small id="create-folder-msg" class="sb-msg" aria-live="polite"></small>
+    </div>
+    {% endif %}
+  </aside>
+
+  <!-- Hauptbereich -->
+  <section class="media-main">
+    <header class="mm-header">
+      <div class="mm-title">
+        <h1 id="current-folder-title">Alle Dateien</h1>
+        <button id="btn-reset-folder" class="btn btn-chip" type="button" title="Zur Gesamtansicht wechseln">Reset</button>
+        <div class="filters">
+          <button class="btn btn-chip is-active" data-filter="all" type="button">Alle</button>
+          <button class="btn btn-chip" data-filter="image" type="button">Bilder</button>
+          <button class="btn btn-chip" data-filter="video" type="button">Videos</button>
+        </div>
+      </div>
+
+      {% if can('upload') %}
+      <div class="mm-upload">
+        <form id="upload-form" onsubmit="return false">
+          <input type="hidden" id="target_folder_id" name="target_folder_id" value="">
+          <label class="btn">
+            Dateien wählen
+            <input id="file-input" type="file" name="file" accept="image/*,video/*" multiple hidden>
+          </label>
+        </form>
+      </div>
+      {% endif %}
+    </header>
+
+    {% if can('upload') %}
+    <div id="dropzone" class="dropzone" aria-label="Dateien hierher ziehen zum Hochladen">
+      <div class="dz-inner">
+        <strong>Hierher ziehen</strong> – Upload in: <em id="dz-target">Root</em><br>
+        <small>Erlaubt: <code>image/*</code>, <code>video/*</code></small>
+      </div>
+    </div>
+    <ul id="upload-log" class="upload-log" hidden></ul>
+    {% endif %}
+
+    <!-- Grid -->
+    <ul class="media-grid" id="media-grid">
+      {% for m in items %}
+        {% set kind = 'video' if m.mime.startswith('video/') else 'image' if m.mime.startswith('image/') else 'file' %}
+        <li class="media-tile"
+            draggable="true"
+            data-id="{{ m.id }}"
+            data-kind="{{ kind }}"
+            data-cat-id="{{ m.folder.id if m.folder }}">
+          <a class="tile-thumb" href="{{ url_for('media.raw_media', media_id=m.id) }}" target="_blank" title="Öffnen">
+            <img src="{{ url_for('media.thumb_media', media_id=m.id) }}" alt="{{ m.filename }}">
+            {% if m.duration_s and kind == 'video' %}
+              <span class="badge">{{ m.duration_s }}s</span>
+            {% endif %}
+          </a>
+
+          <div class="tile-meta">
+            <div class="tile-name" title="{{ m.filename }}">{{ m.filename }}</div>
+            <div class="tile-sub">
+              {{ m.mime }} · #{{ m.id }}
+              {% if m.folder %} · Ordner: <span class="tile-cat">{{ m.folder.name }}</span>{% endif %}
+            </div>
+          </div>
+
+          <div class="tile-actions">
+            {% if can('playlist_write') %}
+              <form method="post" action="{{ url_for('media.add_to_active', media_id=m.id) }}">
+                <button class="btn btn-sm" title="Zur aktiven Playlist">➕</button>
+              </form>
+            {% endif %}
+            {% if can('upload') %}
+              <form method="post" action="{{ url_for('media.rename_media', media_id=m.id) }}" class="rename-form" onsubmit="return renamePrompt(this);">
+                <input type="hidden" name="new_name" value="">
+                <button class="btn btn-sm" title="Umbenennen">✎</button>
+              </form>
+              <form method="post" action="{{ url_for('media.delete_media', media_id=m.id) }}" onsubmit="return confirm('Dieses Medium wirklich löschen?')">
+                <button class="btn btn-sm" title="Löschen">🗑</button>
+              </form>
+            {% endif %}
+            <a class="btn btn-sm" href="{{ url_for('media.raw_media', media_id=m.id) }}" target="_blank" title="Öffnen">⤴</a>
+          </div>
+
+          {% if can('upload') %}
+          <!-- Schnell-Zuweisung -->
+          <div class="quick-assign">
+            <label class="ie-label">Ordner</label>
+            <select class="quick-folder" data-id="{{ m.id }}">
+              <option value="">— keiner —</option>
+            </select>
+            <button class="btn btn-sm quick-assign-btn" data-id="{{ m.id }}" type="button">Zuweisen</button>
+          </div>
+
+          <div class="quick-tags">
+            <label class="ie-label">Tags</label>
+            <input class="quick-tags-input" type="text" placeholder="logo, kampagne" data-id="{{ m.id }}">
+            <button class="btn btn-sm quick-tags-save" data-id="{{ m.id }}" type="button">Speichern</button>
+          </div>
+          {% endif %}
+        </li>
+      {% else %}
+        <li class="media-empty">Noch keine Medien vorhanden. Lade welche oben hoch.</li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  // ---------- State ----------
+  let ACTIVE_CAT_ID = ""; // "" = Alle Dateien
+  let CATEGORIES = [];
+  const BASE_MEDIA_URL = '{{ url_for("media.list_media") }}'; // /media/
+
+  // ---------- DOM helpers ----------
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
+
+  const folderList     = $('#folder-list');
+  const grid           = $('#media-grid');
+  const fileInput      = $('#file-input');
+  const dropzone       = $('#dropzone');
+  const uploadLog      = $('#upload-log');
+  const dzTarget       = $('#dz-target');
+  const titleEl        = $('#current-folder-title');
+  const hiddenTargetId = $('#target_folder_id');
+
+  const btnCreate      = $('#btn-create-folder');
+  const inpCreate      = $('#new-folder-name');
+  const msgCreate      = $('#create-folder-msg');
+  const btnReset       = $('#btn-reset-folder');
+
+  // ---------- URL helpers: folder_id persistieren ----------
+  function getURLFolderId(){
+    const u = new URL(window.location.href);
+    return u.searchParams.get('folder_id') || "";
+  }
+  function setURLFolderId(id){
+    const u = new URL(BASE_MEDIA_URL, window.location.origin);
+    if(id) u.searchParams.set('folder_id', id);
+    history.replaceState(null, '', u.toString());
+  }
+
+  // ---------- Ordner API ----------
+  async function apiListCategories(){
+    const r = await fetch('/api/categories', {cache:'no-store'});
+    if(!r.ok) throw new Error('list failed: ' + r.status);
+    const j = await r.json();
+    return j?.categories || [];
+  }
+  async function apiCreateCategory(name){
+    const r = await fetch('/api/categories', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ name })
+    });
+    const text = await r.text();
+    let data = {};
+    try{ data = JSON.parse(text); }catch(_){}
+    if(!r.ok || data?.ok === false){
+      const err = data?.error || ('create failed: ' + r.status);
+      throw new Error(err);
+    }
+    return data?.category?.id ?? null;
+  }
+  async function apiAssignCategory(mediaId, categoryId){
+    const r = await fetch(`/api/media/${mediaId}/category`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ category_id: categoryId })
+    });
+    if(!r.ok) throw new Error('assign failed: ' + r.status);
+    return await r.json();
+  }
+
+  // ---------- Sidebar ----------
+  async function loadCategories(){ CATEGORIES = await apiListCategories(); }
+
+  function renderSidebar(){
+    $$('.sb-item[data-folder-id]', folderList).forEach(n => n.remove());
+    CATEGORIES.forEach(c=>{
+      const btn = document.createElement('button');
+      btn.className = 'sb-item';
+      btn.dataset.folderId = String(c.id);
+      btn.textContent = '📁 ' + c.name;
+
+      // DnD target
+      btn.addEventListener('dragenter', (e)=>{ e.preventDefault(); btn.classList.add('is-drop'); });
+      btn.addEventListener('dragover',  (e)=>{ e.preventDefault(); btn.classList.add('is-drop'); });
+      btn.addEventListener('dragleave', ()=> btn.classList.remove('is-drop'));
+      btn.addEventListener('drop', async (e)=>{
+        e.preventDefault(); btn.classList.remove('is-drop');
+        const mediaId = e.dataTransfer?.getData('text/plain');
+        if(!mediaId) return;
+        try{
+          await apiAssignCategory(mediaId, c.id);
+          applyLocalReassign(mediaId, String(c.id), c.name);
+          toast(`#${mediaId} → „${c.name}“`);
+        }catch(err){ alert('Konnte nicht zuweisen.'); }
+      });
+
+      // click to filter
+      btn.addEventListener('click', ()=>{
+        setActiveCategory(String(c.id), c.name);
+        setURLFolderId(String(c.id)); // persist in URL
+      });
+      folderList.appendChild(btn);
+    });
+
+    // "Alle Dateien" ebenfalls Dropziel
+    const allBtn = folderList.querySelector('.sb-item:not([data-folder-id])');
+    if(allBtn){
+      allBtn.addEventListener('dragenter', (e)=>{ e.preventDefault(); allBtn.classList.add('is-drop'); });
+      allBtn.addEventListener('dragover',  (e)=>{ e.preventDefault(); allBtn.classList.add('is-drop'); });
+      allBtn.addEventListener('dragleave', ()=> allBtn.classList.remove('is-drop'));
+      allBtn.addEventListener('drop', async (e)=>{
+        e.preventDefault(); allBtn.classList.remove('is-drop');
+        const mediaId = e.dataTransfer?.getData('text/plain');
+        if(!mediaId) return;
+        try{
+          await apiAssignCategory(mediaId, null);
+          applyLocalReassign(mediaId, '', null);
+          toast(`#${mediaId} aus Ordner entfernt`);
+        }catch(err){ alert('Konnte nicht entfernen.'); }
+      });
+      // Klick auf "Alle Dateien"
+      allBtn.addEventListener('click', ()=>{
+        setActiveCategory('', '');
+        setURLFolderId(''); // URL ohne folder_id
+      });
+    }
+    updateSidebarActive();
+  }
+
+  function updateSidebarActive(){
+    $$('.sb-item', folderList).forEach(b=>{
+      const id = b.dataset.folderId ?? '';
+      if(id === ACTIVE_CAT_ID || (!b.dataset.folderId && ACTIVE_CAT_ID === '')){
+        b.classList.add('is-active');
+      }else{
+        b.classList.remove('is-active');
+      }
+    });
+  }
+
+  function setActiveCategory(id, name){
+    ACTIVE_CAT_ID = id || '';
+    if(hiddenTargetId) hiddenTargetId.value = ACTIVE_CAT_ID; // <- wichtig für Upload
+    filterGrid();
+    updateSidebarActive();
+    dzTarget.textContent = name || 'Root';
+    titleEl.textContent  = name || 'Alle Dateien';
+  }
+
+  // ---------- Typ/Ordner Filter ----------
+  let TYPE_FILTER = 'all';
+  $$('.filters .btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      $$('.filters .btn').forEach(b=>b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      TYPE_FILTER = btn.dataset.filter;
+      filterGrid();
+    });
+  });
+  function filterGrid(){
+    $$('.media-tile', grid).forEach(tile=>{
+      const kind  = tile.dataset.kind;
+      const catId = tile.dataset.catId || '';
+      const typeOK = (TYPE_FILTER === 'all') || (TYPE_FILTER === kind);
+      const catOK  = (ACTIVE_CAT_ID === '') || (ACTIVE_CAT_ID === catId);
+      tile.style.display = (typeOK && catOK) ? '' : 'none';
+    });
+  }
+  if(btnReset){
+    btnReset.addEventListener('click', ()=>{
+      setActiveCategory('', '');
+      setURLFolderId('');
+    });
+  }
+
+  // ---------- Upload (immer aktivem Ordner zuordnen & danach in Ordner bleiben) ----------
+  function ensureLogVisible(){ if(uploadLog) uploadLog.hidden = false; }
+  function addLogLine(name, status){
+    ensureLogVisible();
+    const li = document.createElement('li');
+    li.innerHTML = '<strong>'+name+'</strong> — <span class="st">'+status+'</span>';
+    uploadLog.appendChild(li);
+    return li.querySelector('.st');
+  }
+  async function uploadOne(file){
+    const st = addLogLine(file.name, 'Lade hoch …');
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    if(ACTIVE_CAT_ID){
+      // doppelt senden: neues & altes Feld
+      fd.append('target_folder_id', ACTIVE_CAT_ID);
+      fd.append('category_id', ACTIVE_CAT_ID);
+    }
+    try{
+      const res = await fetch('{{ url_for("media.upload_media") }}', {
+        method:'POST',
+        headers: { 'Accept':'application/json', 'X-Requested-With':'fetch' },
+        body: fd
+      });
+      st.textContent = res.ok ? 'fertig' : 'Fehler '+res.status;
+    }catch{ st.textContent='Netzwerkfehler'; }
+  }
+  async function uploadMany(list){
+    if(!list || !list.length) return;
+    for(const f of list){
+      if(!/^image\//.test(f.type) && !/^video\//.test(f.type)){ addLogLine(f.name,'übersprungen'); continue; }
+      await uploadOne(f);
+    }
+    // <- WICHTIG: statt reload() gezielt zurück in den aktiven Ordner
+    if(ACTIVE_CAT_ID){
+      window.location.assign(BASE_MEDIA_URL + '?folder_id=' + encodeURIComponent(ACTIVE_CAT_ID));
+    }else{
+      window.location.assign(BASE_MEDIA_URL);
+    }
+  }
+  if(fileInput){ fileInput.addEventListener('change', e=>{ uploadMany(e.target.files); e.target.value=''; }); }
+  if(dropzone){
+    ['dragenter','dragover'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.add('is-hover');},{passive:false}));
+    ['dragleave','drop'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropzone.classList.remove('is-hover');},{passive:false}));
+    dropzone.addEventListener('drop', e=>{ const files = e.dataTransfer?.files || []; uploadMany(files); });
+  }
+
+  // ---------- Quick-Assign Ordner (Button) ----------
+  function fillAllQuickFolderSelects(){
+    const opts = ['<option value="">— keiner —</option>']
+      .concat(CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`))
+      .join('');
+    $$('.quick-folder').forEach(sel=>{
+      const prev = sel.value;
+      sel.innerHTML = opts;
+      if(prev) sel.value = prev;
+    });
+  }
+  $$('.quick-assign-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id  = btn.dataset.id;
+      const sel = btn.parentElement.querySelector('.quick-folder');
+      const folderId = sel && sel.value ? parseInt(sel.value,10) : null;
+      try{
+        await apiAssignCategory(id, folderId);
+        const folderName = folderId ? (CATEGORIES.find(c=>c.id===folderId)?.name || '') : null;
+        applyLocalReassign(id, folderId ? String(folderId) : '', folderName);
+        btn.textContent='Zugewiesen';
+        setTimeout(()=>{ btn.textContent='Zuweisen'; }, 600);
+      }catch(e){ alert('Konnte nicht zuweisen.'); }
+    });
+  });
+
+  // ---------- Drag & Drop: Kachel -> Ordner ----------
+  function enableTileDrag(){
+    $$('.media-tile').forEach(tile=>{
+      tile.addEventListener('dragstart', (e)=>{
+        const id = tile.dataset.id;
+        e.dataTransfer?.setData('text/plain', id || '');
+        tile.classList.add('dragging');
+      });
+      tile.addEventListener('dragend', ()=>{
+        tile.classList.remove('dragging');
+      });
+    });
+  }
+
+  // ---------- Quick-Tags ----------
+  $$('.quick-tags-save').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id  = btn.dataset.id;
+      const inp = btn.parentElement.querySelector('.quick-tags-input');
+      const tags = (inp.value||'').split(',').map(s=>s.trim()).filter(Boolean);
+      try{
+        const r = await fetch(`/api/media/${id}/tags`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ tags })
+        });
+        if(r.ok){ btn.textContent='Gespeichert'; setTimeout(()=>btn.textContent='Speichern', 800); }
+      }catch(e){ console.warn(e); }
+    });
+  });
+
+  // ---------- Rename ----------
+  window.renamePrompt = function(form){
+    const current = form.closest('.media-tile').querySelector('.tile-name').textContent;
+    const val = prompt('Neuer Name (nur DB-Feld):', current);
+    if(val && val.trim()){
+      form.querySelector('input[name="new_name"]').value = val.trim();
+      return true;
+    }
+    return false;
+  };
+
+  // ---------- Local UI Update nach Reassign ----------
+  function applyLocalReassign(mediaId, newCatId, newCatName){
+    const tile = grid.querySelector(`.media-tile[data-id="${mediaId}"]`);
+    if(!tile) return;
+    tile.dataset.catId = newCatId || '';
+    const sub = tile.querySelector('.tile-sub .tile-cat');
+    if(newCatId && newCatName){
+      if(sub) sub.textContent = newCatName;
+      else {
+        const span = document.createElement('span');
+        span.className = 'tile-cat';
+        span.textContent = newCatName;
+        const subEl = tile.querySelector('.tile-sub');
+        if(subEl && !subEl.querySelector('.tile-cat')){
+          subEl.insertAdjacentHTML('beforeend', ' · Ordner: ');
+          subEl.appendChild(span);
+        }
+      }
+    }else{
+      if(sub){
+        const subEl = tile.querySelector('.tile-sub');
+        if(subEl){
+          sub.remove();
+          subEl.innerHTML = subEl.textContent.replace(/ · Ordner:\s*$/, '');
+        }
+      }
+    }
+    filterGrid();
+  }
+
+  // ---------- Mini-Toast ----------
+  function toast(msg){
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    requestAnimationFrame(()=> t.classList.add('show'));
+    setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(), 300); }, 1200);
+  }
+
+  // ---------- Create folder handlers ----------
+  function setCreateMsg(text, ok=true){
+    if(!msgCreate) return;
+    msgCreate.textContent = text || '';
+    msgCreate.style.color = ok ? '#9fe29f' : '#ff9d9d';
+  }
+
+  if(btnCreate){
+    btnCreate.addEventListener('click', async ()=>{
+      const name = (inpCreate?.value || '').trim();
+      if(!name){ inpCreate?.focus(); setCreateMsg('Bitte Namen eingeben', false); return; }
+      try{
+        btnCreate.disabled = true;
+        btnCreate.textContent = '…';
+        setCreateMsg('');
+        const id = await apiCreateCategory(name);
+        inpCreate.value = '';
+        await loadCategories();
+        renderSidebar();
+        fillAllQuickFolderSelects();
+        setActiveCategory(id ? String(id) : '', name);
+        setURLFolderId(id ? String(id) : ''); // URL aktualisieren
+        setCreateMsg('Ordner angelegt ✔', true);
+      }catch(e){
+        setCreateMsg(String(e?.message || 'Anlegen fehlgeschlagen'), false);
+        alert('Ordner konnte nicht angelegt werden.');
+      }finally{
+        btnCreate.disabled = false;
+        btnCreate.textContent = '➕ Anlegen';
+      }
+    });
+
+    // Enter im Input = Anlegen
+    inpCreate?.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        btnCreate.click();
+      }
+    });
+  }
+
+  // ---------- Init ----------
+  (async function init(){
+    try{
+      CATEGORIES = await apiListCategories();
+    }catch(e){
+      console.error('Konnte Ordner nicht laden:', e);
+      CATEGORIES = [];
+    }
+    renderSidebar();
+    fillAllQuickFolderSelects();
+    enableTileDrag();
+
+    // Aktiv-Ordner aus URL übernehmen (persistente Auswahl)
+    const fromURL = getURLFolderId();
+    if(fromURL){
+      const cat = CATEGORIES.find(c=> String(c.id) === String(fromURL));
+      setActiveCategory(String(fromURL), cat ? cat.name : '');
+    }else{
+      setActiveCategory('', ''); // Start = alle
+    }
+  })();
+})();
+</script>
+
+<style>
+/* ===== Layout ===== */
+.media-layout{
+  display:grid;
+  grid-template-columns: 260px 1fr;
+  gap:16px;
+}
+.media-sidebar{
+  background:#0f1620;
+  border:1px solid #1b2430;
+  border-radius:12px;
+  padding:12px;
+  position:sticky;
+  top:12px;
+  height:fit-content;
+}
+.sb-head h2{ margin:0 0 8px 0; font-size:16px; }
+.sb-divider{ height:8px; }
+.sb-folders{ display:flex; flex-direction:column; gap:6px; }
+.sb-item{
+  width:100%; text-align:left;
+  padding:8px 10px; border-radius:10px; border:none; cursor:pointer;
+  background:#101a26; color:#dbe7ff; transition: background .15s, outline .15s;
+}
+.sb-item:hover{ background:#17263c; }
+.sb-item.is-active{ background:#203552; }
+.sb-item.is-drop{ outline:2px dashed #4c8fff; outline-offset:2px; }
+
+.sb-new{ margin-top:12px; display:grid; gap:8px; }
+.inp{
+  padding:8px 10px; border-radius:10px; border:1px solid #223043; background:#0b1119; color:#eaeff7;
+}
+.sb-msg{ min-height: 1em; font-size: 12px; opacity: .85; }
+.w100{ width:100%; }
+
+.media-main{ min-width:0; }
+.mm-header{
+  display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;
+}
+.mm-title{ display:flex; align-items:center; gap:10px; }
+.mm-title h1{ margin:0; font-size:20px; }
+.btn{ background:#223a5a; border:none; color:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; }
+.btn:hover{ filter:brightness(1.1); }
+.btn-sm{ padding:6px 8px; border-radius:8px; }
+.btn-chip{ background:#17263c; padding:6px 10px; border-radius:999px; }
+.btn-chip.is-active{ background:#2a4266; }
+
+/* ===== Dropzone ===== */
+.dropzone{
+  margin: 10px 0 14px;
+  border: 2px dashed #2a3b55;
+  border-radius: 12px;
+  background: #0f1620;
+  padding: 18px;
+  text-align: center;
+  transition: border-color .15s, background .15s;
+}
+.dropzone.is-hover{ border-color:#4c8fff; background:#0d1b2c; }
+.upload-log{ list-style:none; padding:0; margin:8px 0 14px 0; display:grid; gap:6px; }
+.upload-log li{ background:#0f1620; border:1px solid #1b2430; border-radius:10px; padding:8px 12px; }
+
+/* ===== Grid ===== */
+.media-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px,1fr));
+  gap:14px; list-style:none; padding:0; margin:0;
+}
+.media-tile{
+  background:#0f1620; border:1px solid #1b2430; border-radius:12px; padding:10px;
+  display:grid; gap:8px;
+}
+.media-tile.dragging{ opacity:.6; }
+.tile-thumb{ display:block; position:relative; overflow:hidden; border-radius:10px; background:#0b1119; }
+.tile-thumb img{ width:100%; height:160px; object-fit:cover; display:block; }
+.badge{ position:absolute; right:6px; bottom:6px; background:#203552; padding:2px 6px; border-radius:6px; font-size:12px; }
+.tile-name{ font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tile-sub{ opacity:.75; font-size:12px; }
+.tile-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+
+/* ===== Quick Assign / Tags ===== */
+.quick-assign, .quick-tags{
+  margin-top:6px; border-top:1px dashed #223043; padding-top:8px;
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+}
+.ie-label{ opacity:.8; min-width:56px; }
+.quick-folder, .quick-tags-input{
+  padding:8px 10px; border-radius:10px; border:1px solid #223043; background:#0b1119; color:#eaeff7;
+}
+
+/* ===== Toast ===== */
+.toast{
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(12px);
+  background:#203552; color:#fff; padding:8px 12px; border-radius:10px; opacity:0; pointer-events:none;
+  transition: transform .2s ease, opacity .2s ease;
+  z-index: 9999;
+}
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+</style>
+{% endblock %}

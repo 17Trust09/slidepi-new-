@@ -1,0 +1,48 @@
+<!-- app/templates/admin_network.html -->
+{% extends "base.html" %}
+{% block content %}
+<h1>Netzwerk / Access Point</h1>
+<form method="post" class="form">
+  <div class="row">
+    <div class="col">
+      <label>SSID</label>
+      <input class="form-control" name="ap_ssid" value="{{ ap_ssid or 'SlidePi' }}" maxlength="32" required>
+    </div>
+    <div class="col">
+      <label>Passwort (WPA2, min. 8 Zeichen)</label>
+      <input class="form-control" name="ap_password" type="password" value="{{ ap_password or 'slidepi1234' }}" minlength="8" required>
+    </div>
+  </div>
+
+  <div class="row mt-3">
+    <div class="col">
+      <label>Land (Country Code)</label>
+      <input class="form-control" name="ap_country" value="{{ ap_country or 'DE' }}" pattern="[A-Za-z]{2}" required>
+    </div>
+    <div class="col">
+      <label>Kanal (1–13)</label>
+      <input class="form-control" name="ap_channel" type="number" min="1" max="13" value="{{ ap_channel or '6' }}" required>
+    </div>
+  </div>
+
+  <div class="row mt-3">
+    <div class="col">
+      <label>AP IP (wlan0)</label>
+      <input class="form-control" name="ap_subnet" value="{{ ap_subnet or '10.10.0.1' }}" required>
+    </div>
+    <div class="col">
+      <label>DHCP Range Start</label>
+      <input class="form-control" name="ap_range_start" value="{{ ap_range_start or '10.10.0.50' }}" required>
+    </div>
+    <div class="col">
+      <label>DHCP Range Ende</label>
+      <input class="form-control" name="ap_range_end" value="{{ ap_range_end or '10.10.0.150' }}" required>
+    </div>
+  </div>
+
+  <button class="btn btn-primary mt-4">Speichern & Anwenden</button>
+  <p class="text-muted mt-2">
+    Der AP ist immer aktiv (offline, kein Captive-Portal). Beim Anwenden startet das WLAN-Interface kurz neu.
+  </p>
+</form>
+{% endblock %}

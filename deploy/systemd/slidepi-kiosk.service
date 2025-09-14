@@ -1,0 +1,19 @@
+[Unit]
+Description=SlidePi Chromium Kiosk
+After=graphical.target systemd-user-sessions.service
+# Optional: falls LightDM/GDM benutzt wird
+After=lightdm.service gdm.service
+
+[Service]
+User=pi
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+ExecStart=/usr/local/bin/kiosk.sh
+Restart=always
+RestartSec=2
+
+# Chromium kann sehr speicherhungrig sein – Limit setzen
+MemoryMax=500M
+
+[Install]
+WantedBy=graphical.target

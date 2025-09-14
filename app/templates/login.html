@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}Anmelden{% endblock %}
+
+{% block content %}
+<div class="login-wrap">
+  <section class="login-card">
+    <header class="login-head">
+      <div class="logo-circle" aria-hidden="true">▶</div>
+      <div>
+        <h1 class="login-title">Anmelden</h1>
+        <p class="login-sub">Bitte melde dich an, um das Dashboard zu nutzen.</p>
+      </div>
+    </header>
+
+    {% if error %}
+      <div class="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('auth.login') }}" class="login-form" autocomplete="on" novalidate>
+      {% if request.args.get('next') %}
+        <input type="hidden" name="next" value="{{ request.args.get('next') }}">
+      {% endif %}
+
+      <label class="field">
+        <span class="label">Benutzername</span>
+        <input class="input" type="text" name="username" placeholder="z. B. admin"
+               autocomplete="username" required autofocus>
+      </label>
+
+      <label class="field">
+        <span class="label">Passwort</span>
+        <div class="pw-wrap">
+          <input class="input" id="pw" type="password" name="password"
+                 placeholder="••••••••" autocomplete="current-password" required>
+          <button type="button" class="btn-ghost small" id="pwToggle" aria-controls="pw" aria-pressed="false">anzeigen</button>
+        </div>
+        <div id="caps" class="caps-hint" hidden>Feststelltaste (Caps Lock) ist aktiv.</div>
+      </label>
+
+      <div class="row space-between">
+        <label class="check">
+          <input type="checkbox" name="remember" value="1">
+          <span>Angemeldet bleiben</span>
+        </label>
+        <a class="link-muted" href="#" onclick="alert('Bitte Admin kontaktieren.'); return false;">Passwort vergessen?</a>
+      </div>
+
+      <button class="btn primary" type="submit">Anmelden</button>
+    </form>
+
+    <!-- Dev-Hinweis -->
+    <div class="dev-hint">
+      <p>Dev-Login: <code>admin / raspberry</code></p>
+    </div>
+
+    <footer class="login-foot">
+      <span class="muted">Kein Zugang?</span>
+      <a class="link" href="#" onclick="alert('Bitte Admin kontaktieren.'); return false;">Admin kontaktieren</a>
+    </footer>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+/* Layout-Container */
+.login-wrap{
+  min-height: calc(100vh - 80px);
+  display:grid;
+  place-items:center;
+  padding:24px;
+}
+.login-card{
+  width:min(520px, 92vw);
+  background:#0f1620;
+  border:1px solid #1b2430;
+  border-radius:16px;
+  padding:22px 22px 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+}
+
+/* Header */
+.login-head{ display:flex; gap:14px; align-items:center; margin-bottom:14px; }
+.logo-circle{
+  width:42px; height:42px; border-radius:50%;
+  display:grid; place-items:center;
+  background:linear-gradient(135deg, #132033, #0b1119);
+  border:1px solid #223043;
+  color:#eaeff7; font-weight:700;
+}
+.login-title{ font-size:20px; margin:0; }
+.login-sub{ margin:.25rem 0 0; opacity:.85; }
+
+/* Alerts */
+.alert{
+  background:#2a1a1a;
+  border:1px solid #6a3434;
+  color:#ffd9d9;
+  padding:10px 12px;
+  border-radius:10px;
+  margin: 10px 0 6px;
+}
+
+/* Form */
+.login-form{ display:flex; flex-direction:column; gap:12px; margin-top:8px; }
+.field{ display:flex; flex-direction:column; gap:6px; }
+.label{ font-size:13px; opacity:.9; }
+
+.input{
+  padding:10px 12px;
+  background:#0b1119;
+  border:1px solid #223043;
+  color:#eaeff7;
+  border-radius:10px;
+  outline:none;
+}
+.input:focus{ border-color:#2a3b55; box-shadow:0 0 0 3px rgba(42,59,85,.35); }
+
+.pw-wrap{ display:flex; gap:8px; align-items:center; }
+.btn-ghost.small{
+  padding:8px 10px;
+  border:1px solid #2a3b55;
+  background:transparent;
+  color:#eaeff7;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:12px;
+}
+.btn-ghost.small:hover{ background:#17263c; }
+
+.caps-hint{
+  margin-top:6px;
+  font-size:12px;
+  color:#ffd9d9;
+  opacity:.9;
+}
+
+/* Row & Links */
+.row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.space-between{ justify-content:space-between; }
+.check{ display:flex; gap:8px; align-items:center; opacity:.95; }
+.link-muted{ color:#c6d3e6; opacity:.85; text-decoration:none; }
+.link-muted:hover{ opacity:1; text-decoration:underline; }
+.link{ color:#9bc2ff; text-decoration:none; }
+.link:hover{ text-decoration:underline; }
+.muted{ opacity:.8; }
+
+/* Buttons */
+.btn{
+  border:1px solid #2a3b55;
+  background:#132033;
+  color:#eaeff7;
+  padding:10px 14px;
+  border-radius:10px;
+  cursor:pointer;
+}
+.btn:hover{ background:#17263c; }
+.btn.primary{
+  width:100%;
+  margin-top:4px;
+  font-weight:600;
+  background:linear-gradient(180deg,#1a2a40,#132033);
+}
+.btn.primary:hover{
+  background:linear-gradient(180deg,#20304d,#17263c);
+}
+
+/* Dev-Hinweis */
+.dev-hint{
+  margin-top:14px;
+  padding:8px 12px;
+  font-size:13px;
+  background:#111a28;
+  border:1px dashed #2a3b55;
+  border-radius:10px;
+  color:#c6d3e6;
+}
+.dev-hint code{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  background:#0b1119;
+  padding:2px 5px;
+  border-radius:6px;
+  border:1px solid #223043;
+}
+
+/* Footer */
+.login-foot{
+  margin-top:16px;
+  display:flex; justify-content:center; gap:8px;
+  font-size:13px;
+  opacity:.9;
+}
+
+/* Small screens */
+@media (max-width: 420px){
+  .login-card{ padding:18px 16px 14px; }
+  .logo-circle{ width:36px; height:36px; font-size:12px; }
+}
+</style>
+
+<script>
+// Passwort anzeigen/ausblenden
+const pw = document.getElementById('pw');
+const pwToggle = document.getElementById('pwToggle');
+if (pw && pwToggle){
+  pwToggle.addEventListener('click', ()=>{
+    const show = pw.type === 'password';
+    pw.type = show ? 'text' : 'password';
+    pwToggle.setAttribute('aria-pressed', String(show));
+    pwToggle.textContent = show ? 'verbergen' : 'anzeigen';
+    pw.focus();
+  });
+}
+
+// Caps-Lock Hinweis
+const capsHint = document.getElementById('caps');
+if (pw && capsHint){
+  function onKey(e){
+    const caps = e.getModifierState && e.getModifierState('CapsLock');
+    capsHint.hidden = !caps;
+  }
+  pw.addEventListener('keydown', onKey);
+  pw.addEventListener('keyup', onKey);
+  pw.addEventListener('focus', onKey);
+  pw.addEventListener('blur', ()=> capsHint.hidden = true);
+}
+</script>
+{% endblock %}

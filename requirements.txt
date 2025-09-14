@@ -1,0 +1,10 @@
+Flask
+SQLAlchemy
+passlib[bcrypt]
+python-dotenv
+Werkzeug
+psutil
+Pillow
+Jinja2
+itsdangerous
+click

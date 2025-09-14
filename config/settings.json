@@ -1,0 +1,10 @@
+{
+  "language": "de",
+  "default_duration_s": 10,
+  "theme": "auto",
+  "features": {
+    "ota_update": true,
+    "multi_display": false,
+    "live_preview": true
+  }
+}

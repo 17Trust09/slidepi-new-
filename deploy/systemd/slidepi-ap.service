@@ -1,0 +1,15 @@
+# /etc/systemd/system/slidepi-ap.service
+[Unit]
+Description=SlidePi AP Apply Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Ruft unsere App-integrierte Logik auf (z.B. CLI-Entry oder Flask-Script)
+# Du kannst alternativ das Python-Modul direkt mit "python3 -c" triggern,
+# hier rufen wir ein Shell-Skript auf:
+ExecStart=/usr/local/bin/apply_ap.sh
+
+[Install]
+WantedBy=multi-user.target

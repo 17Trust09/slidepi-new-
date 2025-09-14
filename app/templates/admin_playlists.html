@@ -1,0 +1,377 @@
+{% extends "base.html" %}
+{% block title %}Playlists verwalten{% endblock %}
+{% block content %}
+<h1>Playlists</h1>
+
+<section class="cards two-col">
+  <article class="card">
+    <h3>Neue Playlist</h3>
+    <form method="post" action="{{ url_for('admin.playlists_page') }}">
+      <input type="hidden" name="action" value="create">
+      <label>Name
+        <input name="name" required>
+      </label>
+      <button type="submit">Erstellen</button>
+    </form>
+  </article>
+
+  <article class="card">
+    <h3>Vorhandene Playlists</h3>
+    <ul class="pl-list">
+      {% for p in playlists %}
+        <li class="pl-row {% if p.is_active %}active{% endif %} {% if (p.id|string)==(selected_id|string) %}is-selected{% endif %}">
+          <div class="pl-name">
+            <strong>{{ p.name }}</strong>
+            {% if p.is_active %}<em class="badge is-active" title="Gerade aktive Playlist">✔ aktiv</em>{% endif %}
+          </div>
+          <div class="pl-actions">
+            <form method="post" action="{{ url_for('admin.playlists_page') }}">
+              <input type="hidden" name="playlist_id" value="{{ p.id }}">
+              <input type="hidden" name="action" value="activate">
+              {% if p.is_active %}
+                <button type="submit" class="btn" disabled aria-disabled="true" title="Bereits aktiv">Aktivieren</button>
+              {% else %}
+                <button type="submit" class="btn" title="Diese Playlist aktiv setzen">Aktivieren</button>
+              {% endif %}
+            </form>
+            <form method="post" action="{{ url_for('admin.playlists_page') }}" onsubmit="return confirm('Playlist wirklich löschen?')">
+              <input type="hidden" name="playlist_id" value="{{ p.id }}">
+              <input type="hidden" name="action" value="delete">
+              <button type="submit" class="btn btn-ghost">Löschen</button>
+            </form>
+            <!-- Name als Query-Param mitgeben -->
+            <a class="btn" href="{{ url_for('admin.playlists_page', id=p.id, name=p.name) }}">Bearbeiten</a>
+          </div>
+        </li>
+      {% else %}
+        <li>Keine Playlists vorhanden.</li>
+      {% endfor %}
+    </ul>
+  </article>
+</section>
+
+{% if selected_id %}
+{# --- Name & Aktiv-Status bestimmen: 1) aus request.args['name'], 2) Fallback via Schleife --- #}
+{% set sel_name = request.args.get('name') %}
+{% if not sel_name %}
+  {% for p in playlists %}
+    {% if (p.id|string) == (selected_id|string) %}
+      {% set sel_name = p.name %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+{% set sel_active = false %}
+{% for p in playlists %}
+  {% if (p.id|string) == (selected_id|string) %}
+    {% set sel_active = p.is_active %}
+  {% endif %}
+{% endfor %}
+
+<hr>
+<div class="sticky-head">
+  <h2>Playlist-Inhalte bearbeiten</h2>
+  <div class="edited-pill" title="Gerade geöffnete Playlist">
+    <span class="muted">Sie bearbeiten:</span>
+    <span class="dot" aria-hidden="true"></span>
+    <strong>{{ sel_name or 'Unbekannt' }}</strong>
+    <span class="muted">(#{{ selected_id }})</span>
+    {% if sel_active %}<span class="badge is-active">✔ aktiv</span>{% endif %}
+  </div>
+</div>
+
+<form id="pl-form" method="post" action="{{ url_for('admin.playlists_page') }}">
+  <input type="hidden" name="action" value="save_items">
+  <input type="hidden" name="playlist_id" value="{{ selected_id }}">
+  <input type="hidden" name="media_order" id="media_order">
+  <input type="hidden" name="durations" id="durations">
+
+  <div class="editor-grid">
+    <div>
+      <h3>Alle Medien</h3>
+      <div class="media-toolbar">
+        <div class="filters">
+          <button type="button" class="btn btn-chip is-active" data-kind="all">Alle</button>
+          <button type="button" class="btn btn-chip" data-kind="image">Bilder</button>
+          <button type="button" class="btn btn-chip" data-kind="video">Videos</button>
+        </div>
+        <input id="media-search" class="search" type="search" placeholder="Suchen… (Name/MIME)">
+      </div>
+
+      <p class="hint">Zum Hinzufügen anklicken.</p>
+      <ul id="all-media" class="list media-list">
+        {% for m in media %}
+          {% set kind = 'video' if m.mime.startswith('video/') else 'image' if m.mime.startswith('image/') else 'file' %}
+          <li class="media-row"
+              data-id="{{ m.id }}"
+              data-kind="{{ kind }}"
+              data-name="{{ m.filename|e }}"
+              data-mime="{{ m.mime|e }}"
+              onclick="addToPlaylist({{ m.id }}, '{{ m.filename|e }}')">
+            <img class="thumb" src="{{ url_for('media.thumb_media', media_id=m.id) }}" alt="Thumb" loading="lazy">
+            <div class="meta">
+              <div class="name" title="{{ m.filename }}">#{{ m.id }} — {{ m.filename }}</div>
+              <div class="sub">
+                {% if kind == 'video' %}<span class="tag">VIDEO</span>{% elif kind == 'image' %}<span class="tag">BILD</span>{% endif %}
+                <span class="mime">{{ m.mime }}</span>
+              </div>
+            </div>
+          </li>
+        {% else %}
+          <li>Keine Medien vorhanden.</li>
+        {% endfor %}
+      </ul>
+      {# kein JSON-Dump nötig, wir lesen aus data-* #}
+    </div>
+
+    <div>
+      <h3>Playlist-Reihenfolge</h3>
+      <p>Per Drag &amp; Drop sortieren, Dauer optional (Sek.).</p>
+
+      {# Leermeldung robust toggeln #}
+      {% set has_items = items|length > 0 %}
+      <p id="empty-hint" class="empty" {% if has_items %}hidden{% endif %}>
+        Keine aktiven Medien in der Playlist.
+      </p>
+
+      <ol id="pl-items" class="list droplist">
+        {% for it in items %}
+          <li class="pl-item draggable" draggable="true" data-id="{{ it.media_id }}">
+            <img class="thumb" src="{{ url_for('media.thumb_media', media_id=it.media_id) }}" alt="Thumb" loading="lazy">
+            <span class="name">#{{ it.media_id }}</span>
+            <span class="right-badges">
+              <span class="tag kind" data-for="{{ it.media_id }}"> </span>
+              <span class="tag dur-badge" data-for="{{ it.media_id }}">{{ it.duration_override_s or 'Std.' }}</span>
+            </span>
+            <input class="dur" type="number" min="1" value="{{ it.duration_override_s or '' }}" placeholder="Dauer"
+                   title="Anzeigedauer (Sek.) – leer lassen für Standard" oninput="updateDurBadge(this)">
+            <button type="button" class="icon-btn" onclick="removeItem(this)" title="Entfernen">✕</button>
+          </li>
+        {% endfor %}
+      </ol>
+
+      <button type="submit" class="btn" onclick="prepareSubmit()">Speichern</button>
+    </div>
+  </div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ---- Medien-Metadaten aus der linken DOM-Liste ---- */
+const MEDIA = {};
+document.querySelectorAll('#all-media .media-row').forEach(li => {
+  const id = parseInt(li.dataset.id, 10);
+  MEDIA[id] = {
+    id,
+    filename: li.dataset.name || '',
+    mime: li.dataset.mime || '',
+    kind: li.dataset.kind || 'file'
+  };
+});
+
+/* ---- Helpers ---- */
+const listEl = document.getElementById('pl-items');
+const emptyHint = document.getElementById('empty-hint');
+
+function toggleEmpty(){
+  if (!emptyHint || !listEl) return;
+  emptyHint.hidden = listEl.children.length > 0;
+}
+
+function addToPlaylist(id, name){
+  // Nicht doppelt hinzufügen
+  if (listEl && listEl.querySelector(`[data-id="${id}"]`)) return;
+
+  const li = document.createElement('li');
+  li.className = 'pl-item draggable';
+  li.draggable = true;
+  li.dataset.id = id;
+
+  // Basispfad sauber von Jinja, dann im Browser die trailing 0 ersetzen
+  const thumbBase = "{{ url_for('media.thumb_media', media_id=0) }}".replace(/0$/, "");
+  const thumbUrl  = thumbBase + String(id);
+
+  const meta = MEDIA[id] || { filename: name || ('#'+id), kind: 'file' };
+  const kindLabel = meta.kind === 'video' ? 'VIDEO' : (meta.kind === 'image' ? 'BILD' : 'DATEI');
+
+  li.innerHTML = `
+    <img class="thumb" src="${thumbUrl}" alt="Thumb" loading="lazy">
+    <span class="name" title="${meta.filename || ''}">#${id} — ${meta.filename || ''}</span>
+    <span class="right-badges">
+      <span class="tag kind">${kindLabel}</span>
+      <span class="tag dur-badge">Std.</span>
+    </span>
+    <input class="dur" type="number" min="1" placeholder="Dauer" title="Anzeigedauer (Sek.) – leer lassen für Standard" oninput="updateDurBadge(this)">
+    <button type="button" class="icon-btn" onclick="removeItem(this)" title="Entfernen">✕</button>
+  `;
+
+  listEl.appendChild(li);
+  attachDnD(li);
+  toggleEmpty();
+}
+
+function removeItem(btn){
+  const li = btn.closest('li');
+  if (li) li.remove();
+  toggleEmpty();
+}
+
+function prepareSubmit(){
+  const lis = Array.from(document.querySelectorAll('#pl-items li'));
+  const order = lis.map(li => li.dataset.id);
+  const durs  = lis.map(li => (li.querySelector('.dur').value || ""));
+  document.getElementById('media_order').value = order.join(',');
+  document.getElementById('durations').value   = durs.join(',');
+}
+
+/* ---- Drag & Drop ---- */
+function attachDnD(li){
+  li.addEventListener('dragstart', e => { li.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+  li.addEventListener('dragend',   () => { li.classList.remove('dragging'); });
+}
+
+function getDragAfterElement(container, y){
+  const els = Array.from(container.querySelectorAll('.draggable:not(.dragging)'));
+  return els.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height/2;
+    if (offset < 0 && offset > closest.offset){ return { offset, element: child } }
+    else { return closest }
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+if (listEl){
+  listEl.addEventListener('dragover', e => {
+    e.preventDefault();
+    const dragging = document.querySelector('.dragging');
+    if (!dragging) return;
+    const after = getDragAfterElement(listEl, e.clientY);
+    if (after == null) listEl.appendChild(dragging);
+    else listEl.insertBefore(dragging, after);
+  });
+  Array.from(listEl.querySelectorAll('.draggable')).forEach(attachDnD);
+  toggleEmpty(); // initialer Toggle bei Seitenaufruf
+}
+
+/* ---- Laufzeit-Badge live updaten ---- */
+function updateDurBadge(input){
+  const li = input.closest('.pl-item');
+  const badge = li.querySelector('.dur-badge');
+  const val = (input.value || '').trim();
+  badge.textContent = val ? `${val}s` : 'Std.';
+}
+
+/* ---- Rechte Liste initial mit Dateinamen & Badges anreichern ---- */
+(function enhanceRightList(){
+  const items = Array.from(document.querySelectorAll('#pl-items .pl-item'));
+  for (const li of items){
+    const id = parseInt(li.dataset.id, 10);
+    const meta = MEDIA[id];
+    if (meta){
+      const nameEl = li.querySelector('.name');
+      if (nameEl) nameEl.textContent = `#${id} — ${meta.filename}`;
+      const kindEl = li.querySelector('.tag.kind');
+      if (kindEl) kindEl.textContent = meta.kind === 'video' ? 'VIDEO' : (meta.kind === 'image' ? 'BILD' : 'DATEI');
+    }
+    const durInput = li.querySelector('.dur');
+    if (durInput) updateDurBadge(durInput);
+  }
+})();
+
+/* ---- Filter & Suche links ---- */
+const filterBtns = document.querySelectorAll('.btn.btn-chip');
+const searchInput = document.getElementById('media-search');
+const mediaList   = document.getElementById('all-media');
+
+let activeKind = 'all';
+function applyFilters(){
+  const q = (searchInput?.value || '').toLowerCase();
+  const items = Array.from(mediaList.querySelectorAll('.media-row'));
+  for (const it of items){
+    const k   = it.dataset.kind || 'file';
+    const nm  = (it.dataset.name || '').toLowerCase();
+    const mm  = (it.dataset.mime || '').toLowerCase();
+    const kindOk = (activeKind === 'all') || (k === activeKind);
+    const textOk = !q || nm.includes(q) || mm.includes(q);
+    it.style.display = (kindOk && textOk) ? '' : 'none';
+  }
+}
+
+filterBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    filterBtns.forEach(b => b.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    activeKind = btn.dataset.kind;
+    applyFilters();
+  });
+});
+if (searchInput){ searchInput.addEventListener('input', applyFilters); }
+</script>
+<style>
+/* Layout & Optik */
+.cards.two-col{ display:grid; gap:16px; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); }
+.pl-list{ list-style:none; margin:0; padding:0; display:grid; gap:8px; }
+
+/* Zeilen-Styles mit Aktiv-/Auswahl-Markierung */
+.pl-row{
+  display:flex; justify-content:space-between; align-items:center; gap:10px;
+  padding:10px; border:1px solid #1b2430; border-radius:10px; background:#0f1620;
+  transition: border-color .15s ease, background .15s ease;
+}
+.pl-row.active{ border-color:#3bc17f; background:#0f1a14; }
+.pl-row.is-selected{ box-shadow:0 0 0 2px rgba(155,194,255,.25) inset; }
+
+.pl-name{ display:flex; align-items:center; gap:8px; }
+.pl-actions{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+
+.sticky-head{ position:sticky; top:56px; padding:8px 0 12px; background:linear-gradient(180deg,#0b0f14 75%, transparent); z-index:5; display:flex; justify-content:space-between; align-items:end; gap:12px; }
+.edited-pill{ display:flex; align-items:center; gap:8px; padding:6px 12px; border:1px solid #233146; background:#0f1620; border-radius:999px; }
+.edited-pill .dot{ width:8px; height:8px; background:#3bc17f; border-radius:50%; display:inline-block; }
+.edited-pill .muted{ opacity:.8; }
+
+/* Editor-Grid */
+.editor-grid{ display:grid; gap:16px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 1100px){ .editor-grid{ grid-template-columns: 1fr; }}
+
+/* Listen-Optik */
+.list{ background:#0f1621; border:1px solid #1f2a3a; border-radius:12px; padding:8px; list-style:none; min-height:3rem; }
+.empty{ opacity:.8; padding:12px; text-align:center; border:1px dashed #2a3b55; border-radius:10px; margin:6px 0 10px; }
+
+.media-toolbar{ display:flex; gap:8px; align-items:center; justify-content:space-between; margin:.5rem 0 .25rem; flex-wrap:wrap; }
+.filters{ display:flex; gap:6px; flex-wrap:wrap; }
+.btn{ border:1px solid #2a3b55; background:#132033; color:#eaeff7; padding:8px 12px; border-radius:10px; text-decoration:none; cursor:pointer; }
+.btn:hover{ background:#17263c; }
+.btn[disabled]{ opacity:.6; cursor:not-allowed; }
+.btn-ghost{ background:transparent; }
+.btn-chip{ padding:6px 10px; border-radius:999px; }
+.btn-chip.is-active{ box-shadow:0 0 0 2px #2a3b55 inset; }
+
+.search{ padding:8px 10px; border-radius:10px; border:1px solid #223043; background:#0b1119; color:#eaeff7; min-width:220px; }
+
+.media-list{ max-height:60vh; overflow:auto; }
+.media-row,
+.pl-item{ display:grid; grid-template-columns: 72px 1fr auto auto; align-items:center; gap:10px; padding:8px; border-bottom:1px solid #1f2a3a; }
+.media-row:last-child,
+.pl-item:last-child{ border-bottom:none; }
+.media-row:hover,
+.pl-item.dragging{ background:#111a28; }
+
+.thumb{ width:72px; height:42px; object-fit:cover; border-radius:8px; border:1px solid #253247; background:#0b1119; }
+
+.meta{ display:flex; flex-direction:column; gap:4px; min-width:0; }
+.name{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sub{ opacity:.8; font-size:12px; display:flex; gap:6px; align-items:center; }
+
+.tag{ font-size:11px; padding:2px 6px; border-radius:999px; background:#1a2a40; border:1px solid #2a3b55; }
+.right-badges{ display:flex; gap:6px; margin-right:8px; }
+.dur{ width:90px; padding:8px 10px; border-radius:8px; border:1px solid #223043; background:#0b1119; color:#eaeff7; }
+
+.icon-btn{ border:1px solid #2a3b55; background:#132033; color:#eaeff7; border-radius:8px; padding:6px 10px; cursor:pointer; }
+.icon-btn:hover{ background:#17263c; }
+
+.badge{ font-size:12px; padding:2px 6px; border-radius:6px; background:#1a2a40; border:1px solid #2a3b55; }
+.badge.is-active{ background:#3bc17f; color:#0b0f14; border-color:#3bc17f; font-weight:600; }
+.hint{ opacity:.85; margin:.25rem 0; font-size:12px; }
+</style>
+{% endblock %}

@@ -1,0 +1,9 @@
+# deploy/dnsmasq/dnsmasq.conf.j2
+interface=wlan0
+bind-interfaces
+domain-needed
+bogus-priv
+dhcp-range={ap_range_start},{ap_range_end},255.255.255.0,24h
+dhcp-option=option:router,{ap_subnet}
+dhcp-option=option:dns-server,{ap_subnet}
+# Kein Upstream-DNS, offline-only. Clients können dennoch http://10.10.0.1 erreichen.

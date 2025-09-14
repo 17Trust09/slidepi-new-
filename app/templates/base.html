@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>{{ APP_NAME }} – {% block title %}{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="{{ url_for('static', filename='css/app.css') }}" rel="stylesheet">
+</head>
+<body>
+  <nav class="nav">
+    <a href="{{ url_for('core.index') }}">{{ APP_NAME }}</a>
+    <a href="/admin/network/">Netzwerk / AP</a>
+    <div class="spacer"></div>
+    {% if session.get('user') %}
+      <span>Hi, {{ session.user.username }}</span>
+      <a href="{{ url_for('auth.change_password') }}">Passwort ändern</a>
+      <a href="{{ url_for('auth.logout') }}">Logout</a>
+    {% endif %}
+  </nav>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=True) %}
+      {% if messages %}
+        <ul class="flash">
+        {% for cat, msg in messages %}
+          <li class="flash-{{ cat }}">{{ msg }}</li>
+        {% endfor %}
+        </ul>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
