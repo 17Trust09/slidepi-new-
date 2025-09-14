@@ -8,6 +8,7 @@ set -euo pipefail
 # Flask als systemd Service
 # Kiosk: Xorg + Openbox + Chromium (200/302-Warte-Logik + Timeout)
 # HDMI-Fallback, Energiesparen aus, xrandr-Ausgangswahl, robustes Logging
+# + Chromium Enterprise Policy: Translate aus
 # =========================================
 
 # -------- Konfiguration --------
@@ -212,6 +213,19 @@ WantedBy=multi-user.target
 EOF
 sysd_reload_enable_start slidepi.service
 
+# -------- Chromium-Policy: Übersetzen deaktivieren --------
+echo "==> Chromium-Policy einrichten (Translate deaktivieren)"
+mkdir -p /etc/chromium/policies/managed
+tee /etc/chromium/policies/managed/slidepi.json >/dev/null <<'JSON'
+{
+  "TranslateEnabled": false,
+  "EnableTranslateSubFrames": false,
+  "PasswordManagerEnabled": false,
+  "SpellcheckEnabled": false,
+  "BrowserSignin": 0
+}
+JSON
+
 # -------- Kiosk (Chromium) --------
 echo "==> Kiosk-Modus einrichten"
 CHROMIUM_BIN="$(detect_chromium_bin)"
@@ -296,7 +310,8 @@ CHROME_FLAGS=(
   --disable-extensions
   --password-store=basic
   --autoplay-policy=no-user-gesture-required
-  --lang=en-US
+  --lang=de
+  --accept-lang=de,de-DE
   --ozone-platform=x11
   --disable-gpu            # vermeidet GBM/ANGLE-Zicken
   --use-angle=gles         # Alternative: swiftshader
